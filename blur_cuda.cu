@@ -1,6 +1,7 @@
 // C libraries
 #include <cstdlib>
 #include <cstdio>
+#include <sys/time.h>
 
 //Third party libraries for image manipulation
 #define STB_IMAGE_IMPLEMENTATION
@@ -54,8 +55,9 @@ __global__ void blurImage(unsigned char* img, unsigned char* blurred_img, double
                          int width, int height){
     
     
+    //Allocate space for any kernel of size up to 71
+    __shared__ double kernel[71][71];
     //Thread 0 of each block uploads gaussian kernel from global memory into shared memory
-    __shared__ double kernel[15][15];
     if(threadIdx.x == 0){
         for(unsigned char i = 0 ; i < kernel_size; ++i){
             for(unsigned char j = 0; j < kernel_size; ++j)
@@ -245,11 +247,21 @@ int main(int argc, char* argv[]){
     //Calculate number of pixels that each thread is going to operate
     int n_pixels = (width*height)/(TOTAL_THREADS);  
 
+    //Take current time
+    struct timeval tval_before, tval_after, tval_result;
+
+    gettimeofday(&tval_before, NULL);
                                                       
     //Call kernel
     blurImage<<<BLOCKS_PER_GRID, THREADS_PER_BLOCK>>>(dev_img, dev_blurred_img, dev_kernel,
                                                       kernel_size, n_pixels, TOTAL_THREADS, width, height);
+
+    //Record second time and calculate elapsed time of convolution
+    gettimeofday(&tval_after, NULL);
+    timersub(&tval_after, &tval_before, &tval_result);
     
+    printf("\nElapsed time(convolution): %ld.%06ld seconds\n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);
+
     err = cudaGetLastError();
     if (err != cudaSuccess){
         fprintf(stderr, "Failed to launch blurImage kernel (error code %s)!\n", cudaGetErrorString(err));
@@ -308,6 +320,12 @@ int main(int argc, char* argv[]){
     }
 
     printf("\nConvolution correctly done!\n");
+
+    //Record third time and calculate total elapsed time
+    gettimeofday(&tval_after, NULL);
+    timersub(&tval_after, &tval_before, &tval_result);
+    
+    printf("\nElapsed time(Total): %ld.%06ld seconds\n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);
 
     return EXIT_SUCCESS;
 }
