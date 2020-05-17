@@ -184,26 +184,57 @@ int main(int argc, char* argv[]){
     unsigned char* dev_img;
     unsigned char* dev_blurred_img;
 
+    cudaError_t err = cudaSuccess;
     //Allocating space in device for image and blurred image
-    cudaMalloc((void**)&dev_img, image_size);
-    cudaMalloc((void**)&dev_blurred_img, image_size);
+    err = cudaMalloc((void**)&dev_img, image_size);
+    if (err != cudaSuccess){
+        fprintf(stderr, "Failed to allocate image vector (error code %s)!\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
+
+    err =cudaMalloc((void**)&dev_blurred_img, image_size);
+    if (err != cudaSuccess){
+        fprintf(stderr, "Failed to allocate blurred image vector (error code %s)!\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
 
     //Transport image info into device
-    cudaMemcpy(dev_img, host_img, image_size, cudaMemcpyHostToDevice);
+    err = cudaMemcpy(dev_img, host_img, image_size, cudaMemcpyHostToDevice);
+    if (err != cudaSuccess){
+        fprintf(stderr, "Failed to copy fom host image vector to device image vector (error code %s)!\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
 
     
     //Allocating space for kernel
     double** dev_kernel;
-    cudaMalloc((void**)&dev_kernel, sizeof(double*)*kernel_size);
+    err = cudaMalloc((void**)&dev_kernel, sizeof(double*)*kernel_size);
+    if (err != cudaSuccess){
+        fprintf(stderr, "Failed to allocate kernel matrix (error code %s)!\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
+
     double* dev_kernel_rows[kernel_size];
     
     for(int i=0; i<kernel_size; i++){
-        cudaMalloc((void**)&dev_kernel_rows[i], sizeof(double)*kernel_size);
-        cudaMemcpy(dev_kernel_rows[i], kernel[i], sizeof(double)*kernel_size, cudaMemcpyHostToDevice);
-        //cudaMemcpy(dev_kernel[i], dev_kernel_rows[i], sizeof(double*), cudaMemcpyDeviceToDevice);
+        err = cudaMalloc((void**)&dev_kernel_rows[i], sizeof(double)*kernel_size);
+        if (err != cudaSuccess){
+            fprintf(stderr, "Failed to allocate a row of kernel matrix (error code %s)!\n", cudaGetErrorString(err));
+            exit(EXIT_FAILURE);
+        }
+        err = cudaMemcpy(dev_kernel_rows[i], kernel[i], sizeof(double)*kernel_size, cudaMemcpyHostToDevice);
+        if (err != cudaSuccess){
+            fprintf(stderr, "Failed to copy one row from host kernel to device kernel (error code %s)!\n", cudaGetErrorString(err));
+            exit(EXIT_FAILURE);
+        }
+        
     }
 
-    cudaMemcpy(dev_kernel, dev_kernel_rows, sizeof(double*)*kernel_size, cudaMemcpyHostToDevice);
+    err = cudaMemcpy(dev_kernel, dev_kernel_rows, sizeof(double*)*kernel_size, cudaMemcpyHostToDevice);
+    if (err != cudaSuccess){
+        fprintf(stderr, "Failed to copy from host kernel to device kernel (error code %s)!\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
     
     //Get number of blocks and threads per block
     int BLOCKS_PER_GRID = atoi(argv[4]);
@@ -219,23 +250,48 @@ int main(int argc, char* argv[]){
     blurImage<<<BLOCKS_PER_GRID, THREADS_PER_BLOCK>>>(dev_img, dev_blurred_img, dev_kernel,
                                                       kernel_size, n_pixels, TOTAL_THREADS, width, height);
     
-                                                  
+    err = cudaGetLastError();
+    if (err != cudaSuccess){
+        fprintf(stderr, "Failed to launch blurImage kernel (error code %s)!\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
+
     //Get blurred image from device
-    cudaMemcpy(host_blurred_img, dev_blurred_img, image_size, cudaMemcpyDeviceToHost);
+    err = cudaMemcpy(host_blurred_img, dev_blurred_img, image_size, cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess){
+        fprintf(stderr, "Failed to copy from device blurred image to host blurred image (error code %s)!\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
 
     //Write blurred image in jpg format
     stbi_write_jpg(argv[2], width, height, 3, host_blurred_img, 100);
-    printf("llego aqui3\n");
-    fflush(stdout);
 
     //Free global memory in device
-    cudaFree(dev_img);
-    cudaFree(dev_blurred_img);
+    err = cudaFree(dev_img);
+    if (err != cudaSuccess){
+        fprintf(stderr, "Failed to free device image vector (error code %s)!\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
 
-    for(int i=0; i<kernel_size; i++)
-        cudaFree(dev_kernel_rows[i]);
+    cudaFree(dev_blurred_img);
+    if (err != cudaSuccess){
+        fprintf(stderr, "Failed to free device blurred image vector (error code %s)!\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
+
+    for(int i=0; i<kernel_size; i++){
+        err = cudaFree(dev_kernel_rows[i]);
+        if (err != cudaSuccess){
+            fprintf(stderr, "Failed to free one row of device kernel matrix (error code %s)!\n", cudaGetErrorString(err));
+            exit(EXIT_FAILURE);
+        }
+    }      
     
-    cudaFree(dev_kernel);
+    err = cudaFree(dev_kernel);
+    if (err != cudaSuccess){
+        fprintf(stderr, "Failed to free device kernel (error code %s)!\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
 
     //Free memory in host 
     for(size_t i = 0; i < kernel_size; ++i) 
@@ -244,7 +300,14 @@ int main(int argc, char* argv[]){
     free(kernel);
     stbi_image_free(host_img);
     free(host_blurred_img);
-    
+
+    err = cudaDeviceReset();
+    if (err != cudaSuccess){
+        fprintf(stderr, "Failed to deinitialize the device! error=%s\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
+
+    printf("\nConvolution correctly done!\n");
 
     return EXIT_SUCCESS;
 }
