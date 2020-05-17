@@ -37,47 +37,56 @@ void generate_kernel(int size, double** kernel)
             kernel[i][j] /= sum; 
 } 
 
-//Cuda kernel to apply blurring filter
-//img -> original image array
-//blurred_img -> array of blurred image which is going to be modified
-//global_kernel -> gaussian kernel
-//kernel_size -> size of kernel
-//n_pixels -> number of pixels that each thread is going to operate
-//TOTAL_THREADS -> Total amount of threads that will be running
-//width -> width in pixels of original image
-//height -> height in pixels of original image
+/*
+Cuda kernel to apply blurring filter:
+- img -> original image array
+- blurred_img -> array of blurred image which is going to be modified
+- global_kernel -> gaussian kernel
+- kernel_size -> size of kernel
+- n_pixels -> number of pixels that each thread is going to operate
+- TOTAL_THREADS -> Total amount of threads that will be running
+- width -> width in pixels of original image
+- height -> height in pixels of original image
+*/
+
 __global__ void blurImage(unsigned char* img, unsigned char* blurred_img, double** global_kernel,
-                         int kernel_size, int n_pixels, int TOTAL_THREADS, int width, int height){
+                         unsigned char kernel_size, int n_pixels, int TOTAL_THREADS,
+                         int width, int height){
     
     
     //Thread 0 of each block uploads gaussian kernel from global memory into shared memory
     __shared__ double kernel[15][15];
     if(threadIdx.x == 0){
-        for(int i = 0 ; i < kernel_size; ++i){
-            for(int j = 0; j < kernel_size; ++j)
+        for(unsigned char i = 0 ; i < kernel_size; ++i){
+            for(unsigned char j = 0; j < kernel_size; ++j)
                 kernel[i][j] = global_kernel[i][j]; 
         }
     }
 
-    unsigned char mid_size = kernel_size/2;
+    //Variables to store info needed for convolution
+    unsigned char mid_size = (uint8_t)(kernel_size/2);
     int target_pixel;
     int current_pixel;
     int index = blockDim.x * blockIdx.x + threadIdx.x; 
 
-    unsigned char pixel_valueBlue;
-    unsigned char pixel_valueGreen;
-    unsigned char pixel_valueRed;
+    //Variables for channel info of neighbor pixels
+    int pixel_valueBlue;
+    int pixel_valueGreen;
+    int pixel_valueRed;
 
     double valueRed;
     double valueGreen;
     double valueBlue;
 
-    //All threads must wait for kernel to be fully uploaded to access it
+    //All threads must wait for kernel to be fully loaded to access it
     __syncthreads();
         
     //Convolution of n_pixels per thread
     for(int p = 0; p < n_pixels; ++p) {
-        current_pixel = index*p*TOTAL_THREADS;
+
+        current_pixel = index + p*TOTAL_THREADS;
+        valueRed = valueGreen = valueBlue = 0;
+        
         //Traverse each value of kernel matrix
         for(int i = -mid_size; i <= mid_size; ++i){
             for(int j = -mid_size; j <= mid_size; ++j){
@@ -101,27 +110,6 @@ __global__ void blurImage(unsigned char* img, unsigned char* blurred_img, double
          *(blurred_img + (current_pixel*3) + 1) =  (uint8_t)(valueGreen);
          *(blurred_img + (current_pixel*3) + 2) =  (uint8_t)(valueBlue);  
     }
-    
-
-
-
-    //DEBUGGING
-    /*
-    __shared__ double kernel[15][15];
-    if(threadIdx.x == 0){
-        for(int i = 0 ; i < kernel_size; ++i){
-            for(int j = 0; j < kernel_size; ++j)
-                kernel[i][j] = 1.5; 
-        }
-    }
-
-    int index = blockDim.x * blockIdx.x + threadIdx.x;
-    __syncthreads();
-    
-    if(index < 100)
-        my_kernel[index] = kernel[0][0]; */
-
-
 }
 
 int main(int argc, char* argv[]){
@@ -224,41 +212,17 @@ int main(int argc, char* argv[]){
     //Total number of threads
     int TOTAL_THREADS = BLOCKS_PER_GRID*THREADS_PER_BLOCK;
     //Calculate number of pixels that each thread is going to operate
-    int n_pixels = (width*height)/(TOTAL_THREADS);
-
-    //DEBUGGING
-    /*
-    double* my_kernel;
-    double* my_kernel_host = (double*)malloc(100*sizeof(double));
-    cudaMalloc((void**)&my_kernel, 100*sizeof(double));*/
-
-    
+    int n_pixels = (width*height)/(TOTAL_THREADS);  
 
                                                       
-
     //Call kernel
     blurImage<<<BLOCKS_PER_GRID, THREADS_PER_BLOCK>>>(dev_img, dev_blurred_img, dev_kernel,
                                                       kernel_size, n_pixels, TOTAL_THREADS, width, height);
     
-    printf("llego aqui1\n");
-    fflush(stdout);
                                                   
-     //DEBUGGING
-     /*
-    cudaMemcpy(my_kernel_host, my_kernel, 100*sizeof(double), cudaMemcpyDeviceToHost);
-
-    for(int k = 0 ; k < 100; ++k){
-        printf("%lf\n", my_kernel_host[k]);
-    }
-    printf("llego aqui2\n");
- 
-    fflush(stdout);
-    */
-
     //Get blurred image from device
     cudaMemcpy(host_blurred_img, dev_blurred_img, image_size, cudaMemcpyDeviceToHost);
-    printf("llego aqui2\n");
-    fflush(stdout);
+
     //Write blurred image in jpg format
     stbi_write_jpg(argv[2], width, height, 3, host_blurred_img, 100);
     printf("llego aqui3\n");
