@@ -251,16 +251,14 @@ int main(int argc, char* argv[]){
     struct timeval tval_before, tval_after, tval_result;
 
     gettimeofday(&tval_before, NULL);
-                                                      
+    
+    printf("\nCUDA kernel launched with %d blocks of %d threads. Total: %i\n",
+            BLOCKS_PER_GRID, THREADS_PER_BLOCK, TOTAL_THREADS);
+    fflush(stdout);
+
     //Call kernel
     blurImage<<<BLOCKS_PER_GRID, THREADS_PER_BLOCK>>>(dev_img, dev_blurred_img, dev_kernel,
                                                       kernel_size, n_pixels, TOTAL_THREADS, width, height);
-
-    //Record second time and calculate elapsed time of convolution
-    gettimeofday(&tval_after, NULL);
-    timersub(&tval_after, &tval_before, &tval_result);
-    
-    printf("\nElapsed time(convolution): %ld.%06ld seconds\n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);
 
     err = cudaGetLastError();
     if (err != cudaSuccess){
@@ -321,11 +319,36 @@ int main(int argc, char* argv[]){
 
     printf("\nConvolution correctly done!\n");
 
-    //Record third time and calculate total elapsed time
+    //Record second time and calculate total elapsed time
     gettimeofday(&tval_after, NULL);
     timersub(&tval_after, &tval_before, &tval_result);
     
-    printf("\nElapsed time(Total): %ld.%06ld seconds\n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);
+    printf("\nElapsed time: %ld.%06ld seconds\n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);
+
+    //Get long double of elapsed time
+    double my_elapsed_time = (long int)tval_result.tv_sec + (long int)tval_result.tv_usec/(double)1000000.0;
+
+    //Record log of elapsed time 
+    FILE * fp;
+    
+    size_t file_length = strlen(argv[1]) + strlen(argv[3]) + strlen(argv[4]) + 7;
+    char * fileName = (char *)malloc(sizeof(char)*file_length);
+    fileName[0] = '\0';
+
+    //build the name of the file
+    strcat(fileName, argv[1]);
+    strcat(fileName, "_");
+    strcat(fileName, argv[4]);
+    strcat(fileName, "_");
+    strcat(fileName, argv[3]);
+    strcat(fileName, ".txt");
+
+    fp = fopen (fileName,"a");
+
+    //Write elapsed time in seconds
+    fprintf (fp, "%f ", my_elapsed_time);
+   
+    fclose (fp);
 
     return EXIT_SUCCESS;
 }
