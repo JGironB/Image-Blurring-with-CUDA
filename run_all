@@ -1,0 +1,18 @@
+#!/bin/bash
+
+images=('minion.jpg' 'landscape.jpg' 'universe.jpg')
+images_blur=('minion_blur.jpg' 'landscape_blur.jpg' 'universe_blur.jpg')
+
+for i in 1 23 45 67 89 112
+  do
+    for j in 0 1 2
+      do  
+	      for k in 3 5 7 9 15 31 55 71
+          do
+            for z in 15 31 47 63 79 95 112 128
+              do
+	              ./blur_cuda ${images[$j]} ${images_blur[$j]} $k $i $z 
+              done
+	        done 
+      done
+  done
